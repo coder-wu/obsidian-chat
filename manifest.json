@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-chat",
+  "name": "Obsidian Chat",
+  "version": "0.1.4",
+  "minAppVersion": "1.5.0",
+  "description": "Cloud AI chat inside Obsidian. Attach vault files/folders as context; every chat is a markdown file. Works on desktop and mobile.",
+  "author": "Polaris",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
