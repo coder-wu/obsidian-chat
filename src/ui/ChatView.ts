@@ -29,6 +29,7 @@ import {
   FileSuggestModal,
   FolderSuggestModal,
 } from "../context/picker";
+import { computeMobileTopOffset, startTopSync } from "./mobileTop";
 
 export const CHAT_VIEW_TYPE = "obsidian-chat";
 
@@ -132,6 +133,8 @@ export class ChatView extends ItemView {
 
   async onClose(): Promise<void> {
     this.abortController?.abort();
+    window.removeEventListener("resize", this.onWindowResize);
+    this.stopTopSync?.();
   }
 
   getState(): Record<string, unknown> {
@@ -169,13 +172,12 @@ export class ChatView extends ItemView {
     const root = this.contentEl.createDiv({ cls: "obsidian-chat" });
     this.rootEl = root;
 
-    // On mobile, Obsidian adds margin-top to .view-content to make room for the
-    // navbar + view-header. We hide the view-header (redundant with our toolbar)
-    // but Obsidian pre-computed the margin INCLUDING the view-header's space.
-    // So we must reduce the margin by the view-header's height. We do this in a
-    // setTimeout so Obsidian has applied its layout first. This is adaptive —
-    // we read actual values, not hardcoded ones.
-    setTimeout(() => this.adjustMobileMargin(), 100);
+    // Mobile top offset: measure Obsidian's real margin on .view-content and
+    // move it to padding-top on our root (see adjustMobileMargin). Re-check on
+    // resize (orientation) and keep in sync every 2s while open.
+    this.adjustMobileMargin();
+    window.addEventListener("resize", this.onWindowResize);
+    this.stopTopSync = startTopSync(this.rootEl, this.contentEl);
 
     // toolbar
     const toolbar = root.createDiv({ cls: "ai-toolbar" });
@@ -742,32 +744,39 @@ export class ChatView extends ItemView {
     };
   }
 
-  private marginRetries = 0;
+  private stopTopSync: (() => void) | null = null;
 
+  private marginAttempts = 0;
+
+  private onWindowResize = (): void => {
+    this.marginAttempts = 0;
+    this.adjustMobileMargin();
+  };
+
+  // Obsidian adds margin-top to .view-content (safe-area + top chrome, e.g.
+  // 99px on iPhone with the view-header). We hide the view-header, so we move
+  // the offset to padding-top on our root — but target only what is really in
+  // flow above the content (see computeMobileTopOffset): floating bars
+  // overlay the content and must not be cleared. The measured margin confirms
+  // Obsidian's layout has settled before we act.
   private adjustMobileMargin(): void {
-    // Obsidian sets margin-top on .view-content = safe-area + view-header height
-    // (e.g. 99px on iPhone). We hide the view-header but KEEP the full offset —
-    // the user confirmed this position is correct. We read the value at runtime
-    // (with retries, since Obsidian applies it asynchronously) and move it from
-    // the margin to padding-top on our root. Adaptive to any device.
+    if (!document.body.classList.contains("is-mobile")) return;
     const viewContent = this.contentEl;
     const marginTop = parseFloat(getComputedStyle(viewContent).marginTop) || 0;
-
-    if (marginTop <= 0) {
-      // Not applied yet (timing) — retry a few times.
-      if (this.marginRetries < 5) {
-        this.marginRetries++;
-        setTimeout(() => this.adjustMobileMargin(), 200);
-      }
+    if (marginTop > 0) {
+      viewContent.style.setProperty("margin-top", "0px", "important");
+      const target = computeMobileTopOffset();
+      const pad = target > 0 ? target : marginTop;
+      this.rootEl.style.paddingTop = pad + "px";
+      this.rootEl.style.boxSizing = "border-box";
+      console.log("[obsidian-chat] adjustMobileMargin: margin", marginTop, "px, target", pad, "px");
       return;
     }
-
-    // Move Obsidian's margin to our root's padding (keeps the same visual
-    // position: content sits below the mobile top bar on this device).
-    viewContent.style.setProperty("margin-top", "0px", "important");
-    this.rootEl.style.paddingTop = marginTop + "px";
-    this.rootEl.style.boxSizing = "border-box";
-    console.log("[obsidian-chat] adjustMobileMargin: margin", marginTop, "px → padding on root");
+    // Obsidian applies its layout asynchronously — keep checking up to ~5s.
+    if (this.marginAttempts < 20) {
+      this.marginAttempts++;
+      setTimeout(() => this.adjustMobileMargin(), 250);
+    }
   }
 
   private abortRequest(): void {

@@ -13,6 +13,7 @@ import type { ChatContext } from "../types";
 import { buildContext } from "../context/builder";
 import { estimateTokens } from "../chat/tokenEstimate";
 import { FileSuggestModal, FolderSuggestModal } from "../context/picker";
+import { computeMobileTopOffset, startTopSync } from "./mobileTop";
 
 export const CONTEXT_VIEW_TYPE = "obsidian-chat-context";
 
@@ -43,8 +44,11 @@ export class ContextView extends ItemView {
 
     const root = this.contentEl.createDiv({ cls: "obsidian-chat-context" });
 
-    // Same mobile margin adjustment as ChatView — see comment there.
-    setTimeout(() => this.adjustMobileMargin(), 100);
+    // Mobile top offset — same as ChatView: measure, don't guess. Re-check on
+    // resize (orientation) and keep in sync every 2s while open.
+    this.adjustMobileMargin();
+    window.addEventListener("resize", this.onWindowResize);
+    this.stopTopSync = startTopSync(root, this.contentEl);
 
     // Header with action buttons
     const header = root.createDiv({ cls: "ai-ctx-header" });
@@ -82,7 +86,10 @@ export class ContextView extends ItemView {
     await this.refresh();
   }
 
-  async onClose(): Promise<void> {}
+  async onClose(): Promise<void> {
+    window.removeEventListener("resize", this.onWindowResize);
+    this.stopTopSync?.();
+  }
 
   async onOpenFile(): Promise<void> {}
 
@@ -94,23 +101,36 @@ export class ContextView extends ItemView {
     await this.refresh();
   }
 
-  // Get the active chat's context (shared state with ChatView)
-  private marginRetries = 0;
+  private stopTopSync: (() => void) | null = null;
+
+  private marginAttempts = 0;
+
+  private onWindowResize = (): void => {
+    this.marginAttempts = 0;
+    this.adjustMobileMargin();
+  };
+
   private adjustMobileMargin(): void {
+    // Same logic as ChatView.adjustMobileMargin — measure Obsidian's margin
+    // (confirms layout settled) then pad the root by the in-flow top offset.
+    if (!document.body.classList.contains("is-mobile")) return;
     const viewContent = this.contentEl;
     const marginTop = parseFloat(getComputedStyle(viewContent).marginTop) || 0;
-    if (marginTop <= 0) {
-      if (this.marginRetries < 5) {
-        this.marginRetries++;
-        setTimeout(() => this.adjustMobileMargin(), 200);
+    if (marginTop > 0) {
+      viewContent.style.setProperty("margin-top", "0px", "important");
+      const target = computeMobileTopOffset();
+      const pad = target > 0 ? target : marginTop;
+      const root = this.contentEl.querySelector(".obsidian-chat-context") as HTMLElement | null;
+      if (root) {
+        root.style.paddingTop = pad + "px";
+        root.style.boxSizing = "border-box";
       }
+      console.log("[obsidian-chat] adjustMobileMargin (context): margin", marginTop, "px, target", pad, "px");
       return;
     }
-    viewContent.style.setProperty("margin-top", "0px", "important");
-    const root = this.contentEl.querySelector(".obsidian-chat-context") as HTMLElement | null;
-    if (root) {
-      root.style.paddingTop = marginTop + "px";
-      root.style.boxSizing = "border-box";
+    if (this.marginAttempts < 20) {
+      this.marginAttempts++;
+      setTimeout(() => this.adjustMobileMargin(), 250);
     }
   }
 

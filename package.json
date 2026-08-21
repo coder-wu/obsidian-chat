@@ -1,6 +1,6 @@
 {
   "name": "obsidian-chat",
-  "version": "0.1.4",
+  "version": "0.1.9",
   "description": "Cloud AI chat inside Obsidian. Attach vault files/folders as context; every chat is a markdown file.",
   "main": "main.js",
   "scripts": {

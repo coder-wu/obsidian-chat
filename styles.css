@@ -26,9 +26,9 @@
   padding: 0 2px;
 }
 /* On mobile, hide the view-header — we have our own toolbar. The top offset
-   is applied at runtime in JS: we read Obsidian's original margin-top on
-   .view-content (which is safe-area + view-header height = the correct total
-   for each device) and re-apply it as padding-top on our root. */
+   (safe-area + view-header height) is applied at runtime in JS: we measure
+   Obsidian's own margin-top on .view-content (the true value for this
+   device/theme) and move it to padding-top on our root. */
 .is-mobile .workspace-leaf-content[data-type="obsidian-chat"] .view-header,
 .is-mobile .workspace-leaf-content[data-type="obsidian-chat-context"] .view-header {
   display: none !important;
